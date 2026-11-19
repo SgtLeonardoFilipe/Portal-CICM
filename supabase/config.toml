@@ -1,0 +1,5 @@
+[functions.avisar-instrutor]
+verify_jwt = false
+
+[functions.area-instrutor]
+verify_jwt = false
