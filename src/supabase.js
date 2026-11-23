@@ -68,3 +68,23 @@ export async function baixarResposta(resposta, codigo='') {
   if(!resp.ok) throw new Error('Não foi possível baixar a resposta.');
   await baixarBlob(await resp.blob(),resposta.arquivo_nome);
 }
+
+// Anexos enviados somente pela função protegida pelo código do instrutor.
+export async function enviarAnexoRecado(codigo,recadoId,file) {
+  validarArquivo(file);
+  const form=new FormData();
+  form.append('acao','anexar-recado');form.append('recado_id',recadoId);form.append('arquivo',file);
+  const {data,error}=await supabase.functions.invoke('area-instrutor',{
+    body:form,headers:{'x-instructor-code':codigo}
+  });
+  if(error){let message=error.message;try{const d=await error.context?.json();message=d?.erro||message}catch{}throw new Error(message)}
+  if(data?.erro)throw new Error(data.erro);
+  return data;
+}
+export async function baixarAnexoRecado(anexo) {
+  const {url:arquivoUrl}=await instrutorAPI('link-anexo-recado','',{anexo_id:anexo.id});
+  if(!arquivoUrl)throw new Error('Arquivo não disponível.');
+  const resp=await fetch(arquivoUrl);
+  if(!resp.ok)throw new Error('Não foi possível baixar o arquivo.');
+  await baixarBlob(await resp.blob(),anexo.arquivo_nome);
+}

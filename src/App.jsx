@@ -1,6 +1,6 @@
 import React, {useEffect,useMemo,useState} from 'react';
-import {Upload, Download, FolderOpen, Search, FileText, CheckCircle2, Clock3, RefreshCw, Mail, Send, X, ArrowLeft, Users, AlertTriangle, LockKeyhole, EyeOff, Eye, ShieldCheck, Trash2, Megaphone, Pencil, Pin} from 'lucide-react';
-import {supabase,configured,falha,enviarPedidoArquivo,baixarPedido,baixarResposta,instrutorAPI,enviarRascunho,validarArquivo} from './supabase';
+import {Upload, Download, FolderOpen, Search, FileText, CheckCircle2, Clock3, RefreshCw, Mail, Send, X, ArrowLeft, Users, AlertTriangle, LockKeyhole, EyeOff, Eye, ShieldCheck, Trash2, Megaphone, Pencil, Pin, Paperclip} from 'lucide-react';
+import {supabase,configured,falha,enviarPedidoArquivo,baixarPedido,baixarResposta,instrutorAPI,enviarRascunho,enviarAnexoRecado,baixarAnexoRecado,validarArquivo} from './supabase';
 
 const CATEGORIAS=['Dados cadastrais','Pedidos ao Judiciário','Relatórios','Outros documentos'];
 const dataBR=s=>s?new Date(s).toLocaleString('pt-BR'):'';
@@ -10,7 +10,7 @@ const instrutor=window.location.pathname.replace(/\/+$/,'')==='/instrutores';
 
 export default function App(){
   const [pedidos,setPedidos]=useState([]),[respostas,setRespostas]=useState([]),[rascunhos,setRascunhos]=useState([]);
-  const [recados,setRecados]=useState([]),[editandoRecado,setEditandoRecado]=useState(null);
+  const [recados,setRecados]=useState([]),[anexosRecados,setAnexosRecados]=useState([]),[arquivosRecado,setArquivosRecado]=useState([]),[editandoRecado,setEditandoRecado]=useState(null);
   const [recadoForm,setRecadoForm]=useState({titulo:'',conteudo:'',autor:'',importante:false});
   const [codigo,setCodigo]=useState(''),[autorizado,setAutorizado]=useState(false);
   const [aba,setAba]=useState('arquivos'),[filtro,setFiltro]=useState('Todos'),[busca,setBusca]=useState('');
@@ -23,12 +23,13 @@ export default function App(){
     if(!configured)return;
     setCarregando(true);setErro('');
     try{
-      const [p,r,rec]=await Promise.all([
+      const [p,r,rec,anex]=await Promise.all([
         supabase.from('cicm_portal_pedidos').select('*').order('criado_em',{ascending:false}),
         supabase.from('cicm_portal_respostas').select('*').order('criado_em',{ascending:true}),
-        supabase.from('cicm_portal_recados').select('*').order('importante',{ascending:false}).order('criado_em',{ascending:false})
+        supabase.from('cicm_portal_recados').select('*').order('importante',{ascending:false}).order('criado_em',{ascending:false}),
+        supabase.from('cicm_portal_recados_anexos').select('id,recado_id,arquivo_nome,arquivo_tamanho,criado_em').order('criado_em',{ascending:true})
       ]);
-      falha(p.error);falha(r.error);falha(rec.error);setPedidos(p.data||[]);setRespostas(r.data||[]);setRecados(rec.data||[]);
+      falha(p.error);falha(r.error);falha(rec.error);falha(anex.error);setPedidos(p.data||[]);setRespostas(r.data||[]);setRecados(rec.data||[]);setAnexosRecados(anex.data||[]);
     }catch(e){setErro(msg(e));}finally{setCarregando(false);}
   }
   useEffect(()=>{carregarPublicos()},[]);
@@ -104,7 +105,7 @@ export default function App(){
     }catch(e){setErro(msg(e))}finally{setDeletando('')}
   }
   function iniciarRecado(r=null){
-    setEditandoRecado(r?.id||'novo');
+    setEditandoRecado(r?.id||'novo');setArquivosRecado([]);
     setRecadoForm(r?{titulo:r.titulo,conteudo:r.conteudo,autor:r.autor,importante:r.importante}:{titulo:'',conteudo:'',autor:'',importante:false});
     setErro('');setAviso('');
   }
@@ -113,16 +114,40 @@ export default function App(){
     try{
       const payload={titulo:recadoForm.titulo.trim(),conteudo:recadoForm.conteudo.trim(),autor:recadoForm.autor.trim(),importante:recadoForm.importante};
       if(!payload.titulo||!payload.conteudo||!payload.autor)throw new Error('Preencha título, mensagem e nome do instrutor.');
-      await instrutorAPI(editandoRecado==='novo'?'criar-recado':'editar-recado',codigo,{
+      if(arquivosRecado.length>5)throw new Error('Selecione no máximo 5 arquivos por envio.');
+      arquivosRecado.forEach(validarArquivo);
+      const result=await instrutorAPI(editandoRecado==='novo'?'criar-recado':'editar-recado',codigo,{
         ...payload,...(editandoRecado!=='novo'?{recado_id:editandoRecado}:{})
       });
-      setEditandoRecado(null);setAviso('Recado salvo e disponível para os alunos.');await carregarPublicos();
+      const recadoId=editandoRecado==='novo'?result.id:editandoRecado;
+      let sucesso=0;
+      for(const file of arquivosRecado){
+        try{await enviarAnexoRecado(codigo,recadoId,file);sucesso++}
+        catch(e){
+          await carregarPublicos();
+          setEditandoRecado(recadoId);setArquivosRecado(arquivosRecado.slice(sucesso));
+          throw new Error(`Recado salvo e ${sucesso} anexo(s) enviado(s), mas um arquivo falhou: ${msg(e)}. Confira os anexos e tente novamente.`);
+        }
+      }
+      setEditandoRecado(null);setArquivosRecado([]);
+      setAviso(`Recado salvo para os alunos${sucesso?` com ${sucesso} anexo(s)`:''}.`);
+      await carregarPublicos();
     }catch(e){setErro(msg(e));}finally{setEnviando(false)}
+  }
+  async function excluirAnexoRecado(anexo){
+    if(!window.confirm(`Remover o arquivo “${anexo.arquivo_nome}” deste recado?`))return;
+    setDeletando(anexo.id);setErro('');setAviso('');
+    try{
+      const result=await instrutorAPI('excluir-anexo-recado',codigo,{anexo_id:anexo.id});
+      await carregarPublicos();
+      if(result.arquivo_pendente)setErro('Anexo removido do recado, mas a limpeza do Storage falhou. Consulte os logs.');
+      else setAviso('Anexo removido do recado.');
+    }catch(e){setErro(msg(e))}finally{setDeletando('')}
   }
   async function excluirRecado(r){
     if(!window.confirm(`Excluir o recado “${r.titulo}”?`))return;
     setDeletando(r.id);setErro('');setAviso('');
-    try{await instrutorAPI('excluir-recado',codigo,{recado_id:r.id});setAviso('Recado excluído.');await carregarPublicos()}
+    try{const result=await instrutorAPI('excluir-recado',codigo,{recado_id:r.id});await carregarPublicos();if(result.arquivos_pendentes?.length)setErro('Recado excluído, mas alguns arquivos precisam de limpeza no Storage.');else setAviso('Recado e anexos excluídos.')}
     catch(e){setErro(msg(e))}finally{setDeletando('')}
   }
   async function baixar(id,fn){setBaixando(id);setErro('');try{await fn()}catch(e){setErro(msg(e))}finally{setBaixando('')}}
@@ -150,7 +175,7 @@ export default function App(){
           <div><strong>{pedidos.length-respondidos}</strong><span>Aguardando publicação</span></div></div>
         {instrutor&&<div className="instructor-banner"><EyeOff size={18}/><span>Área não listada no menu dos alunos. As respostas em rascunho só ficam disponíveis mediante código.</span><button className="light" onClick={()=>{setAutorizado(false);setCodigo('');setRascunhos([])}}>Sair</button></div>}
         {<div className="tabs"><button className={aba==='arquivos'?'selected':''} onClick={()=>setAba('arquivos')}><FolderOpen size={17}/> Todos os arquivos</button>{!instrutor&&<button className={aba==='enviar'?'selected':''} onClick={()=>setAba('enviar')}><Upload size={17}/> Novo envio</button>}<button className={aba==='recados'?'selected':''} onClick={()=>setAba('recados')}><Megaphone size={17}/> Mural de recados ({recados.length})</button></div>}
-        {aba==='recados'?<section className="recados-area"><div className="recados-heading"><div><h3>Comunicados do curso</h3><p>Orientações e avisos publicados pelos instrutores para toda a turma.</p></div>{instrutor&&<button className="primary" onClick={()=>iniciarRecado()}><Megaphone size={16}/> Novo recado</button>}</div>{!recados.length?<div className="empty"><Megaphone size={35}/><h3>{carregando?'Carregando...':'Nenhum recado publicado'}</h3></div>:<div className="items">{recados.map(r=><article className={'item recado '+(r.importante?'recado-importante':'')} key={r.id}><div className="item-head">{r.importante?<span className="category"><Pin size={14}/> Aviso importante</span>:<span className="category">Comunicado</span>}<span className="recado-data">{dataBR(r.criado_em)}</span></div><h3>{r.titulo}</h3><p className="recado-texto">{r.conteudo}</p><div className="recado-rodape"><span>Publicado por {r.autor}</span>{instrutor&&<div className="actions"><button className="outline" disabled={!!deletando} onClick={()=>iniciarRecado(r)}><Pencil size={15}/> Editar</button><button className="danger-link" disabled={!!deletando} onClick={()=>excluirRecado(r)}><Trash2 size={15}/> Excluir</button></div>}</div></article>)}</div>}</section>:!instrutor&&aba==='enviar'?<section className="panel"><div className="panel-title"><h3>Enviar pedido ou relatório</h3><p>O pedido ficará público para toda a turma.</p></div>
+        {aba==='recados'?<section className="recados-area"><div className="recados-heading"><div><h3>Comunicados do curso</h3><p>Orientações e avisos publicados pelos instrutores para toda a turma.</p></div>{instrutor&&<button className="primary" onClick={()=>iniciarRecado()}><Megaphone size={16}/> Novo recado</button>}</div>{!recados.length?<div className="empty"><Megaphone size={35}/><h3>{carregando?'Carregando...':'Nenhum recado publicado'}</h3></div>:<div className="items">{recados.map(r=><article className={'item recado '+(r.importante?'recado-importante':'')} key={r.id}><div className="item-head">{r.importante?<span className="category"><Pin size={14}/> Aviso importante</span>:<span className="category">Comunicado</span>}<span className="recado-data">{dataBR(r.criado_em)}</span></div><h3>{r.titulo}</h3><p className="recado-texto">{r.conteudo}</p>{anexosRecados.some(a=>a.recado_id===r.id)&&<div className="recado-anexos"><strong><Paperclip size={15}/> Arquivos anexados</strong>{anexosRecados.filter(a=>a.recado_id===r.id).map(a=><div className="attachment" key={a.id}><FileText size={18}/><span title={a.arquivo_nome}>{a.arquivo_nome}</span><button disabled={baixando===a.id} onClick={()=>baixar(a.id,()=>baixarAnexoRecado(a))}><Download size={16}/> Baixar</button></div>)}</div>}<div className="recado-rodape"><span>Publicado por {r.autor}</span>{instrutor&&<div className="actions"><button className="outline" disabled={!!deletando} onClick={()=>iniciarRecado(r)}><Pencil size={15}/> Editar</button><button className="danger-link" disabled={!!deletando} onClick={()=>excluirRecado(r)}><Trash2 size={15}/> Excluir</button></div>}</div></article>)}</div>}</section>:!instrutor&&aba==='enviar'?<section className="panel"><div className="panel-title"><h3>Enviar pedido ou relatório</h3><p>O pedido ficará público para toda a turma.</p></div>
           <form className="form" onSubmit={novoPedido}><div className="cols"><label>Nome do aluno<input maxLength="120" required value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Nome completo"/></label>
             <label>Equipe<input maxLength="100" required value={form.equipe} onChange={e=>setForm({...form,equipe:e.target.value})} placeholder="Ex.: Equipe Alfa"/></label></div>
             <label>Categoria<select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})}>{CATEGORIAS.map(c=><option key={c}>{c}</option>)}</select></label>
@@ -183,7 +208,7 @@ export default function App(){
       </>}
       <footer><Mail size={16}/> Aviso de novos pedidos por e-mail configurável no Supabase. <span>Use somente documentos fictícios ou liberados para compartilhamento público.</span></footer>
     </main>
-    {editandoRecado&&<div className="modal-backdrop" onClick={()=>{if(!enviando)setEditandoRecado(null)}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="titulo-recado" onClick={e=>e.stopPropagation()}><div className="modal-top"><h3 id="titulo-recado">{editandoRecado==='novo'?'Novo recado':'Editar recado'}</h3><button className="icon-btn" disabled={enviando} onClick={()=>setEditandoRecado(null)}><X size={20}/></button></div><p>Este recado ficará visível a todos os alunos do portal.</p><form className="form" onSubmit={salvarRecado}><label>Título<input required maxLength={180} value={recadoForm.titulo} onChange={e=>setRecadoForm({...recadoForm,titulo:e.target.value})}/></label><label>Nome do instrutor<input required maxLength={120} value={recadoForm.autor} onChange={e=>setRecadoForm({...recadoForm,autor:e.target.value})}/></label><label>Mensagem<textarea required maxLength={5000} rows={7} value={recadoForm.conteudo} onChange={e=>setRecadoForm({...recadoForm,conteudo:e.target.value})}/></label><label className="recado-check"><input type="checkbox" checked={recadoForm.importante} onChange={e=>setRecadoForm({...recadoForm,importante:e.target.checked})}/> Destacar como aviso importante</label><div className="actions"><button className="light" type="button" disabled={enviando} onClick={()=>setEditandoRecado(null)}>Cancelar</button><button className="primary" disabled={enviando} type="submit"><Send size={16}/>{enviando?'Salvando...':'Publicar recado'}</button></div></form></section></div>}
+    {editandoRecado&&<div className="modal-backdrop" onClick={()=>{if(!enviando)setEditandoRecado(null)}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="titulo-recado" onClick={e=>e.stopPropagation()}><div className="modal-top"><h3 id="titulo-recado">{editandoRecado==='novo'?'Novo recado':'Editar recado'}</h3><button className="icon-btn" disabled={enviando} onClick={()=>setEditandoRecado(null)}><X size={20}/></button></div><p>Este recado ficará visível a todos os alunos do portal.</p><form className="form" onSubmit={salvarRecado}><label>Título<input required maxLength={180} value={recadoForm.titulo} onChange={e=>setRecadoForm({...recadoForm,titulo:e.target.value})}/></label><label>Nome do instrutor<input required maxLength={120} value={recadoForm.autor} onChange={e=>setRecadoForm({...recadoForm,autor:e.target.value})}/></label><label>Mensagem<textarea required maxLength={5000} rows={7} value={recadoForm.conteudo} onChange={e=>setRecadoForm({...recadoForm,conteudo:e.target.value})}/></label><label>Anexar arquivos (até 5 por envio, 15 MB por arquivo)<input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png" onChange={e=>setArquivosRecado(Array.from(e.target.files||[]))}/></label>{arquivosRecado.length>0&&<small>{arquivosRecado.length} arquivo(s) selecionado(s).</small>}{editandoRecado!=='novo'&&anexosRecados.some(a=>a.recado_id===editandoRecado)&&<div className="recado-anexos"><strong>Arquivos já publicados</strong>{anexosRecados.filter(a=>a.recado_id===editandoRecado).map(a=><div className="attachment" key={a.id}><FileText size={18}/><span>{a.arquivo_nome}</span><button className="danger-link" type="button" disabled={enviando||!!deletando} onClick={()=>excluirAnexoRecado(a)}><Trash2 size={15}/> Remover</button></div>)}</div>}<label className="recado-check"><input type="checkbox" checked={recadoForm.importante} onChange={e=>setRecadoForm({...recadoForm,importante:e.target.checked})}/> Destacar como aviso importante</label><div className="actions"><button className="light" type="button" disabled={enviando} onClick={()=>setEditandoRecado(null)}>Cancelar</button><button className="primary" disabled={enviando} type="submit"><Send size={16}/>{enviando?'Salvando...':'Publicar recado'}</button></div></form></section></div>}
     {respostaPara&&<div className="modal-backdrop" onClick={()=>{if(!enviando)setRespostaPara(null)}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="titulo-resposta" onClick={e=>e.stopPropagation()}>
       <div className="modal-top"><h3 id="titulo-resposta">Nova resposta em rascunho</h3><button className="icon-btn" disabled={enviando} onClick={()=>setRespostaPara(null)}><X size={20}/></button></div>
       <p>Pedido: <strong>{respostaPara.titulo}</strong></p><div className="alert warning"><EyeOff size={17}/> Esta resposta não ficará visível aos alunos até clicar em Publicar.</div>
