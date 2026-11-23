@@ -44,6 +44,31 @@ serve(async req=>{
     }
 
     if(!autorizado)return fail('Código inválido',401);
+    if(acao==='criar-recado'||acao==='editar-recado'){
+      if(isForm)return fail('Formato inválido');
+      const titulo=String(body.titulo||'').trim(),conteudo=String(body.conteudo||'').trim(),autor=String(body.autor||'').trim();
+      if(!titulo||titulo.length>180||!conteudo||conteudo.length>5000||!autor||autor.length>120||typeof body.importante!=='boolean')return fail('Preencha os campos do recado corretamente');
+      const dados={titulo,conteudo,autor,importante:body.importante};
+      if(acao==='criar-recado'){
+        const {data,error}=await admin.from('cicm_portal_recados').insert(dados).select('id').single();
+        if(error)return fail('Falha ao publicar recado: '+error.message,500);
+        return json({ok:true,id:data.id});
+      }
+      const id=String(body.recado_id||'');
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return fail('Recado inválido');
+      const {data,error}=await admin.from('cicm_portal_recados').update(dados).eq('id',id).select('id').maybeSingle();
+      if(error)return fail('Falha ao editar recado: '+error.message,500);
+      if(!data)return fail('Recado não encontrado',404);
+      return json({ok:true});
+    }
+    if(acao==='excluir-recado'){
+      const id=String(body.recado_id||'');
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return fail('Recado inválido');
+      const {data,error}=await admin.from('cicm_portal_recados').delete().eq('id',id).select('id').maybeSingle();
+      if(error)return fail('Falha ao excluir recado: '+error.message,500);
+      if(!data)return fail('Recado não encontrado',404);
+      return json({ok:true});
+    }
     if(acao==='listar-rascunhos'){
       const {data,error}=await admin.from('cicm_portal_respostas').select('id,pedido_id,nome,arquivo_nome,arquivo_path,criado_em').eq('publicada',false).order('criado_em',{ascending:false});
       if(error)return fail('Falha ao listar rascunhos',500);
