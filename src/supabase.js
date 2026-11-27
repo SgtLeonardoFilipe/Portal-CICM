@@ -69,6 +69,7 @@ export async function baixarResposta(resposta, codigo='') {
   await baixarBlob(await resp.blob(),resposta.arquivo_nome);
 }
 
+<<<<<<< HEAD
 // Anexos do mural: qualquer extensão, máximo de 100 MiB por arquivo.
 // O código do instrutor autoriza a URL assinada; o navegador envia em partes ao Storage.
 export const LIMITE_ANEXO_RECADO = 100 * 1024 * 1024;
@@ -137,6 +138,19 @@ export async function enviarAnexoRecado(codigo,recadoId,file,onProgress=()=>{}) 
   return instrutorAPI('confirmar-anexo-recado',codigo,{
     recado_id:recadoId,arquivo_path:path,arquivo_nome:file.name,arquivo_tamanho:file.size
   });
+=======
+// Anexos enviados somente pela função protegida pelo código do instrutor.
+export async function enviarAnexoRecado(codigo,recadoId,file) {
+  validarArquivo(file);
+  const form=new FormData();
+  form.append('acao','anexar-recado');form.append('recado_id',recadoId);form.append('arquivo',file);
+  const {data,error}=await supabase.functions.invoke('area-instrutor',{
+    body:form,headers:{'x-instructor-code':codigo}
+  });
+  if(error){let message=error.message;try{const d=await error.context?.json();message=d?.erro||message}catch{}throw new Error(message)}
+  if(data?.erro)throw new Error(data.erro);
+  return data;
+>>>>>>> 2120068364894ab290496de1b78989874f662f64
 }
 export async function baixarAnexoRecado(anexo) {
   const {url:arquivoUrl}=await instrutorAPI('link-anexo-recado','',{anexo_id:anexo.id});
