@@ -88,7 +88,7 @@ async function tusEnviarArquivo(file,path,token,onProgress=()=>{}) {
   const host = endereco.hostname.endsWith('.supabase.co')
     ? endereco.hostname.replace(/\.supabase\.co$/, '.storage.supabase.co')
     : endereco.hostname;
-  const endpoint = `${endereco.protocol}//${host}/storage/v1/upload/resumable`;
+  const endpoint = `${endereco.protocol}//${host}/storage/v1/upload/resumable/sign`;
   const headers = {'Tus-Resumable':'1.0.0','x-signature':token};
   const metadata = {
     bucketName:'cicm_recados_privado',objectName:path,
