@@ -214,5 +214,5 @@ serve(async req=>{
       return json({ok:true});
     }
     return fail('Ação desconhecida',400);
-  }catch(e){return fail('Requisição inválida',400)}
+  }catch{return fail('Requisição inválida',400)}
 });
