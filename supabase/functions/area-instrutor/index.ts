@@ -1,7 +1,6 @@
 // Deploy com --no-verify-jwt: autorização pelo código privado validado NO SERVIDOR.
 // Nunca coloque CICM_INSTRUCTOR_CODE ou SUPABASE_SERVICE_ROLE_KEY no Vite.
-import {serve} from 'https://deno.land/std@0.224.0/http/server.ts';
-import {createClient} from 'https://esm.sh/@supabase/supabase-js@2.57.0';
+import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL=Deno.env.get('SUPABASE_URL')||'';
 const SERVICE_KEY=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
@@ -22,7 +21,7 @@ async function sameSecret(a:string,b:string){
   const v1=new Uint8Array(x),v2=new Uint8Array(y);let diff=0;
   for(let i=0;i<v1.length;i++)diff|=v1[i]^v2[i];return diff===0;
 }
-serve(async req=>{
+Deno.serve(async (req: Request)=>{
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
   if(req.method!=='POST')return fail('Método não permitido',405);
   if(!SUPABASE_URL||!SERVICE_KEY||!CODE||CODE.length<16)return fail('Configuração do servidor incompleta',503);
