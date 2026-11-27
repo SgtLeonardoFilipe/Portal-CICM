@@ -1,10 +1,6 @@
 import React, {useEffect,useMemo,useState} from 'react';
 import {Upload, Download, FolderOpen, Search, FileText, CheckCircle2, Clock3, RefreshCw, Mail, Send, X, ArrowLeft, Users, AlertTriangle, LockKeyhole, EyeOff, Eye, ShieldCheck, Trash2, Megaphone, Pencil, Pin, Paperclip} from 'lucide-react';
-<<<<<<< HEAD
 import {supabase,configured,falha,enviarPedidoArquivo,baixarPedido,baixarResposta,instrutorAPI,enviarRascunho,enviarAnexoRecado,baixarAnexoRecado,validarArquivo,validarAnexoRecado} from './supabase';
-=======
-import {supabase,configured,falha,enviarPedidoArquivo,baixarPedido,baixarResposta,instrutorAPI,enviarRascunho,enviarAnexoRecado,baixarAnexoRecado,validarArquivo} from './supabase';
->>>>>>> 2120068364894ab290496de1b78989874f662f64
 
 const CATEGORIAS=['Dados cadastrais','Pedidos ao Judiciário','Relatórios','Outros documentos'];
 const dataBR=s=>s?new Date(s).toLocaleString('pt-BR'):'';
@@ -120,22 +116,14 @@ export default function App(){
       const payload={titulo:recadoForm.titulo.trim(),conteudo:recadoForm.conteudo.trim(),autor:recadoForm.autor.trim(),importante:recadoForm.importante};
       if(!payload.titulo||!payload.conteudo||!payload.autor)throw new Error('Preencha título, mensagem e nome do instrutor.');
       if(arquivosRecado.length>5)throw new Error('Selecione no máximo 5 arquivos por envio.');
-<<<<<<< HEAD
       arquivosRecado.forEach(validarAnexoRecado);
-=======
-      arquivosRecado.forEach(validarArquivo);
->>>>>>> 2120068364894ab290496de1b78989874f662f64
       const result=await instrutorAPI(editandoRecado==='novo'?'criar-recado':'editar-recado',codigo,{
         ...payload,...(editandoRecado!=='novo'?{recado_id:editandoRecado}:{})
       });
       const recadoId=editandoRecado==='novo'?result.id:editandoRecado;
       let sucesso=0;
       for(const file of arquivosRecado){
-<<<<<<< HEAD
         try{setProgressoAnexo({nome:file.name,porcentagem:0});await enviarAnexoRecado(codigo,recadoId,file,porcentagem=>setProgressoAnexo({nome:file.name,porcentagem}));sucesso++}
-=======
-        try{await enviarAnexoRecado(codigo,recadoId,file);sucesso++}
->>>>>>> 2120068364894ab290496de1b78989874f662f64
         catch(e){
           await carregarPublicos();
           setEditandoRecado(recadoId);setArquivosRecado(arquivosRecado.slice(sucesso));
@@ -145,11 +133,7 @@ export default function App(){
       setEditandoRecado(null);setArquivosRecado([]);
       setAviso(`Recado salvo para os alunos${sucesso?` com ${sucesso} anexo(s)`:''}.`);
       await carregarPublicos();
-<<<<<<< HEAD
     }catch(e){setErro(msg(e));}finally{setEnviando(false);setProgressoAnexo(null)}
-=======
-    }catch(e){setErro(msg(e));}finally{setEnviando(false)}
->>>>>>> 2120068364894ab290496de1b78989874f662f64
   }
   async function excluirAnexoRecado(anexo){
     if(!window.confirm(`Remover o arquivo “${anexo.arquivo_nome}” deste recado?`))return;
@@ -225,11 +209,7 @@ export default function App(){
       </>}
       <footer><Mail size={16}/> Aviso de novos pedidos por e-mail configurável no Supabase. <span>Use somente documentos fictícios ou liberados para compartilhamento público.</span></footer>
     </main>
-<<<<<<< HEAD
     {editandoRecado&&<div className="modal-backdrop" onClick={()=>{if(!enviando)setEditandoRecado(null)}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="titulo-recado" onClick={e=>e.stopPropagation()}><div className="modal-top"><h3 id="titulo-recado">{editandoRecado==='novo'?'Novo recado':'Editar recado'}</h3><button className="icon-btn" disabled={enviando} onClick={()=>setEditandoRecado(null)}><X size={20}/></button></div><p>Este recado ficará visível a todos os alunos do portal.</p><form className="form" onSubmit={salvarRecado}><label>Título<input required maxLength={180} value={recadoForm.titulo} onChange={e=>setRecadoForm({...recadoForm,titulo:e.target.value})}/></label><label>Nome do instrutor<input required maxLength={120} value={recadoForm.autor} onChange={e=>setRecadoForm({...recadoForm,autor:e.target.value})}/></label><label>Mensagem<textarea required maxLength={5000} rows={7} value={recadoForm.conteudo} onChange={e=>setRecadoForm({...recadoForm,conteudo:e.target.value})}/></label><label>Anexar arquivos (até 5 por envio, 100 MB por arquivo, qualquer extensão)<input type="file" multiple onChange={e=>setArquivosRecado(Array.from(e.target.files||[]))}/></label>{progressoAnexo&&<p role="status">Enviando {progressoAnexo.nome}: {progressoAnexo.porcentagem}%</p>}{arquivosRecado.length>0&&<small>{arquivosRecado.length} arquivo(s) selecionado(s).</small>}{editandoRecado!=='novo'&&anexosRecados.some(a=>a.recado_id===editandoRecado)&&<div className="recado-anexos"><strong>Arquivos já publicados</strong>{anexosRecados.filter(a=>a.recado_id===editandoRecado).map(a=><div className="attachment" key={a.id}><FileText size={18}/><span>{a.arquivo_nome}</span><button className="danger-link" type="button" disabled={enviando||!!deletando} onClick={()=>excluirAnexoRecado(a)}><Trash2 size={15}/> Remover</button></div>)}</div>}<label className="recado-check"><input type="checkbox" checked={recadoForm.importante} onChange={e=>setRecadoForm({...recadoForm,importante:e.target.checked})}/> Destacar como aviso importante</label><div className="actions"><button className="light" type="button" disabled={enviando} onClick={()=>setEditandoRecado(null)}>Cancelar</button><button className="primary" disabled={enviando} type="submit"><Send size={16}/>{enviando?'Salvando...':'Publicar recado'}</button></div></form></section></div>}
-=======
-    {editandoRecado&&<div className="modal-backdrop" onClick={()=>{if(!enviando)setEditandoRecado(null)}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="titulo-recado" onClick={e=>e.stopPropagation()}><div className="modal-top"><h3 id="titulo-recado">{editandoRecado==='novo'?'Novo recado':'Editar recado'}</h3><button className="icon-btn" disabled={enviando} onClick={()=>setEditandoRecado(null)}><X size={20}/></button></div><p>Este recado ficará visível a todos os alunos do portal.</p><form className="form" onSubmit={salvarRecado}><label>Título<input required maxLength={180} value={recadoForm.titulo} onChange={e=>setRecadoForm({...recadoForm,titulo:e.target.value})}/></label><label>Nome do instrutor<input required maxLength={120} value={recadoForm.autor} onChange={e=>setRecadoForm({...recadoForm,autor:e.target.value})}/></label><label>Mensagem<textarea required maxLength={5000} rows={7} value={recadoForm.conteudo} onChange={e=>setRecadoForm({...recadoForm,conteudo:e.target.value})}/></label><label>Anexar arquivos (até 5 por envio, 15 MB por arquivo)<input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png" onChange={e=>setArquivosRecado(Array.from(e.target.files||[]))}/></label>{arquivosRecado.length>0&&<small>{arquivosRecado.length} arquivo(s) selecionado(s).</small>}{editandoRecado!=='novo'&&anexosRecados.some(a=>a.recado_id===editandoRecado)&&<div className="recado-anexos"><strong>Arquivos já publicados</strong>{anexosRecados.filter(a=>a.recado_id===editandoRecado).map(a=><div className="attachment" key={a.id}><FileText size={18}/><span>{a.arquivo_nome}</span><button className="danger-link" type="button" disabled={enviando||!!deletando} onClick={()=>excluirAnexoRecado(a)}><Trash2 size={15}/> Remover</button></div>)}</div>}<label className="recado-check"><input type="checkbox" checked={recadoForm.importante} onChange={e=>setRecadoForm({...recadoForm,importante:e.target.checked})}/> Destacar como aviso importante</label><div className="actions"><button className="light" type="button" disabled={enviando} onClick={()=>setEditandoRecado(null)}>Cancelar</button><button className="primary" disabled={enviando} type="submit"><Send size={16}/>{enviando?'Salvando...':'Publicar recado'}</button></div></form></section></div>}
->>>>>>> 2120068364894ab290496de1b78989874f662f64
     {respostaPara&&<div className="modal-backdrop" onClick={()=>{if(!enviando)setRespostaPara(null)}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="titulo-resposta" onClick={e=>e.stopPropagation()}>
       <div className="modal-top"><h3 id="titulo-resposta">Nova resposta em rascunho</h3><button className="icon-btn" disabled={enviando} onClick={()=>setRespostaPara(null)}><X size={20}/></button></div>
       <p>Pedido: <strong>{respostaPara.titulo}</strong></p><div className="alert warning"><EyeOff size={17}/> Esta resposta não ficará visível aos alunos até clicar em Publicar.</div>

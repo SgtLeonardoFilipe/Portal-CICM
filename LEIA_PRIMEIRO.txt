@@ -1,0 +1,28 @@
+PORTAL CICM — RESOLUCAO DE CONFLITOS GIT
+
+Esta pasta traz os 3 arquivos de codigo corrigidos, sem marcadores de conflito,
+conservando os anexos de recados de ate 100 MiB, qualquer extensao, com upload em partes.
+Nao altera as regras de 15 MB dos pedidos/respostas existentes.
+
+1. Faca um backup da pasta CICM antes de substituir os arquivos.
+2. Copie os arquivos src/App.jsx, src/supabase.js e
+   supabase/functions/area-instrutor/index.ts para os mesmos caminhos em CICM.
+3. Substitua .gitignore pelo arquivo fornecido (suas regras antigas foram preservadas).
+4. No terminal PowerShell, estando na pasta CICM, execute:
+
+   git rm --cached -f --ignore-unmatch supabase/.temp/cli-latest
+   git rm --cached -f --ignore-unmatch .DS_Store
+   git add .gitignore src/App.jsx src/supabase.js supabase/functions/area-instrutor/index.ts
+   git status
+
+   Se aparecer 'All conflicts fixed but you are still merging', execute:
+   git commit -m "Resolve conflitos e mantem anexos de recados de 100 MB"
+   git push origin main
+
+5. Verifique com git status que nao restam conflitos.
+6. Se for necessario atualizar a funcao na nuvem, use o projeto CICM:
+   npx supabase link --project-ref ighfivcwykpyqfluifnf
+   npx supabase functions deploy area-instrutor --no-verify-jwt
+
+OBSERVACAO: upload de 100 MB depende do limite configurado no Supabase.
+Nao rode git reset --hard nem git push --force.

@@ -57,7 +57,6 @@ serve(async req=>{
     }
 
     if(!autorizado)return fail('Código inválido',401);
-<<<<<<< HEAD
     // Arquivos grandes nunca passam pela Edge Function: somente autorização e confirmação.
     if(acao==='preparar-anexo-recado'){
       if(isForm)return fail('Formato inválido');
@@ -101,28 +100,6 @@ serve(async req=>{
       return json({ok:true,id:anexo.id});
     }
     if(acao==='anexar-recado')return fail('Atualize o portal: anexos agora usam upload em partes');
-=======
-    if(acao==='anexar-recado'){
-      if(!isForm)return fail('Envie o arquivo como formulário');
-      const id=String(body.get('recado_id')||'');
-      const file=body.get('arquivo');
-      if(!uuid.test(id)||!(file instanceof File))return fail('Selecione o recado e o arquivo');
-      if(!file.size||file.size>15728640||file.name.length>255)return fail('Arquivo vazio, maior que 15 MB ou nome muito longo');
-      const ext=file.name.split('.').pop()?.toLowerCase()||'';
-      if(!extensions.has(ext))return fail('Formato não permitido');
-      const {data:recado}=await admin.from('cicm_portal_recados').select('id').eq('id',id).maybeSingle();
-      if(!recado)return fail('Recado não encontrado',404);
-      const {count,error:countError}=await admin.from('cicm_portal_recados_anexos').select('id',{count:'exact',head:true}).eq('recado_id',id);
-      if(countError)return fail('Falha ao consultar anexos',500);
-      if((count||0)>=20)return fail('Limite de 20 anexos por recado');
-      const path=`recados/${id}/${crypto.randomUUID()}.${ext}`;
-      const {error:uploadError}=await admin.storage.from(RECADO_BUCKET).upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});
-      if(uploadError)return fail('Falha no envio: '+uploadError.message,500);
-      const {data:anexo,error}=await admin.from('cicm_portal_recados_anexos').insert({recado_id:id,arquivo_nome:file.name,arquivo_path:path,arquivo_tamanho:file.size}).select('id').single();
-      if(error){await admin.storage.from(RECADO_BUCKET).remove([path]);return fail('Falha ao salvar o anexo: '+error.message,500)}
-      return json({ok:true,id:anexo.id});
-    }
->>>>>>> 2120068364894ab290496de1b78989874f662f64
     if(acao==='excluir-anexo-recado'){
       if(isForm)return fail('Formato inválido');
       const id=String(body.anexo_id||'');
