@@ -7,6 +7,8 @@ const SUPABASE_URL=Deno.env.get('SUPABASE_URL')||'';
 const SERVICE_KEY=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
 const CODE=Deno.env.get('CICM_INSTRUCTOR_CODE')||'';
 const BUCKET='cicm_respostas_privado';
+const RECADO_BUCKET='cicm_recados_privado';
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const extensions=new Set(['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','jpg','jpeg','png']);
 const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type, x-instructor-code',
   'Access-Control-Allow-Methods':'POST, OPTIONS','Cache-Control':'no-store','Content-Type':'application/json; charset=utf-8'};
@@ -43,7 +45,106 @@ serve(async req=>{
       return json({url:data.signedUrl});
     }
 
+    // Alunos recebem links temporários para anexos de recados publicados.
+    if(acao==='link-anexo-recado'){
+      const id=String(isForm?body.get('anexo_id'):body.anexo_id||'');
+      if(!uuid.test(id))return fail('Anexo inválido');
+      const {data,error}=await admin.from('cicm_portal_recados_anexos').select('arquivo_path').eq('id',id).maybeSingle();
+      if(error||!data)return fail('Anexo não encontrado',404);
+      const {data:link,error:storageError}=await admin.storage.from(RECADO_BUCKET).createSignedUrl(data.arquivo_path,60);
+      if(storageError||!link)return fail('Não foi possível acessar o anexo',500);
+      return json({url:link.signedUrl});
+    }
+
     if(!autorizado)return fail('Código inválido',401);
+    // Arquivos grandes nunca passam pela Edge Function: somente autorização e confirmação.
+    if(acao==='preparar-anexo-recado'){
+      if(isForm)return fail('Formato inválido');
+      const id=String(body.recado_id||'');
+      const nome=String(body.arquivo_nome||'').trim();
+      const tamanho=Number(body.arquivo_tamanho);
+      if(!uuid.test(id)||!nome||nome.length>255||!Number.isSafeInteger(tamanho)||tamanho<1||tamanho>104857600)
+        return fail('Arquivo inválido ou maior que 100 MB');
+      const {data:recado,error:recadoError}=await admin.from('cicm_portal_recados').select('id').eq('id',id).maybeSingle();
+      if(recadoError||!recado)return fail('Recado não encontrado',404);
+      const {count,error:countError}=await admin.from('cicm_portal_recados_anexos').select('id',{count:'exact',head:true}).eq('recado_id',id);
+      if(countError)return fail('Falha ao consultar anexos',500);
+      if((count||0)>=20)return fail('Limite de 20 anexos por recado');
+      // Caminho aleatório, sem utilizar nome/extensão fornecidos pelo usuário no Storage.
+      const path=`recados/${id}/${crypto.randomUUID()}`;
+      const {data,error}=await admin.storage.from(RECADO_BUCKET).createSignedUploadUrl(path);
+      if(error||!data)return fail('Não foi possível autorizar upload: '+(error?.message||'erro desconhecido'),500);
+      return json({path,token:data.token});
+    }
+    if(acao==='confirmar-anexo-recado'){
+      if(isForm)return fail('Formato inválido');
+      const id=String(body.recado_id||'');
+      const path=String(body.arquivo_path||'');
+      const nome=String(body.arquivo_nome||'').trim();
+      const tamanho=Number(body.arquivo_tamanho);
+      if(!uuid.test(id)||!nome||nome.length>255||!Number.isSafeInteger(tamanho)||tamanho<1||tamanho>104857600 ||
+         !new RegExp(`^recados/${id}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`,'i').test(path))return fail('Dados do anexo inválidos');
+      const {data:recado}=await admin.from('cicm_portal_recados').select('id').eq('id',id).maybeSingle();
+      if(!recado)return fail('Recado não encontrado',404);
+      const {count}=await admin.from('cicm_portal_recados_anexos').select('id',{count:'exact',head:true}).eq('recado_id',id);
+      if((count||0)>=20)return fail('Limite de 20 anexos por recado');
+      const pasta=`recados/${id}`;
+      const arquivo=path.slice(pasta.length+1);
+      const {data:objetos,error:storageError}=await admin.storage.from(RECADO_BUCKET).list(pasta,{limit:100,search:arquivo});
+      const objeto=(objetos||[]).find(o=>o.name===arquivo);
+      if(storageError||!objeto)return fail('O upload ainda não foi concluído',409);
+      const realSize=Number(objeto.metadata?.size??0);
+      if(!realSize||realSize!==tamanho||realSize>104857600)return fail('Tamanho do arquivo armazenado não confere',400);
+      const {data:anexo,error}=await admin.from('cicm_portal_recados_anexos').insert({recado_id:id,arquivo_nome:nome,arquivo_path:path,arquivo_tamanho:tamanho}).select('id').single();
+      if(error)return fail('Falha ao registrar o anexo: '+error.message,500);
+      return json({ok:true,id:anexo.id});
+    }
+    if(acao==='anexar-recado')return fail('Atualize o portal: anexos agora usam upload em partes');
+    if(acao==='excluir-anexo-recado'){
+      if(isForm)return fail('Formato inválido');
+      const id=String(body.anexo_id||'');
+      if(!uuid.test(id))return fail('Anexo inválido');
+      const {data,error}=await admin.from('cicm_portal_recados_anexos').delete().eq('id',id).select('arquivo_path').maybeSingle();
+      if(error)return fail('Falha ao excluir anexo: '+error.message,500);
+      if(!data)return fail('Anexo não encontrado',404);
+      const {error:storageError}=await admin.storage.from(RECADO_BUCKET).remove([data.arquivo_path]);
+      return json({ok:true,arquivo_pendente:storageError?.message||null});
+    }
+
+    if(acao==='criar-recado'||acao==='editar-recado'){
+      if(isForm)return fail('Formato inválido');
+      const titulo=String(body.titulo||'').trim(),conteudo=String(body.conteudo||'').trim(),autor=String(body.autor||'').trim();
+      if(!titulo||titulo.length>180||!conteudo||conteudo.length>5000||!autor||autor.length>120||typeof body.importante!=='boolean')return fail('Preencha os campos do recado corretamente');
+      const dados={titulo,conteudo,autor,importante:body.importante};
+      if(acao==='criar-recado'){
+        const {data,error}=await admin.from('cicm_portal_recados').insert(dados).select('id').single();
+        if(error)return fail('Falha ao publicar recado: '+error.message,500);
+        return json({ok:true,id:data.id});
+      }
+      const id=String(body.recado_id||'');
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return fail('Recado inválido');
+      const {data,error}=await admin.from('cicm_portal_recados').update(dados).eq('id',id).select('id').maybeSingle();
+      if(error)return fail('Falha ao editar recado: '+error.message,500);
+      if(!data)return fail('Recado não encontrado',404);
+      return json({ok:true});
+    }
+    if(acao==='excluir-recado'){
+      const id=String(body.recado_id||'');
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return fail('Recado inválido');
+      const {data:anexos,error:listaError}=await admin.from('cicm_portal_recados_anexos').select('arquivo_path').eq('recado_id',id);
+      if(listaError)return fail('Falha ao listar anexos do recado',500);
+      const {data,error}=await admin.from('cicm_portal_recados').delete().eq('id',id).select('id').maybeSingle();
+      if(error)return fail('Falha ao excluir recado: '+error.message,500);
+      if(!data)return fail('Recado não encontrado',404);
+      const paths=(anexos||[]).map(a=>a.arquivo_path);
+      const pendentes:string[]=[];
+      for(let i=0;i<paths.length;i+=100){
+        const lote=paths.slice(i,i+100);
+        const {error:storageError}=await admin.storage.from(RECADO_BUCKET).remove(lote);
+        if(storageError)pendentes.push(...lote);
+      }
+      return json({ok:true,arquivos_pendentes:pendentes});
+    }
     if(acao==='listar-rascunhos'){
       const {data,error}=await admin.from('cicm_portal_respostas').select('id,pedido_id,nome,arquivo_nome,arquivo_path,criado_em').eq('publicada',false).order('criado_em',{ascending:false});
       if(error)return fail('Falha ao listar rascunhos',500);
